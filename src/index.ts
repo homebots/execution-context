@@ -1,65 +1,64 @@
 type Fn = Function;
 
-export interface ExecutionLocals {
-  [local: string]: any;
-}
+export type Variables = Record<string, any>;
 
 const expressionCache = new Map<string, Fn>();
 
 export class ExecutionContext {
-  locals: ExecutionLocals;
+  private variables: Variables;
 
-  constructor(
-    private thisValue: object,
-    private parent?: ExecutionContext,
-  ) {}
+  constructor(private thisValue: object = null, private parent?: ExecutionContext) {
+    this.reset();
+  }
 
-  addLocals(locals: ExecutionLocals) {
-    Object.assign(this.locals || (this.locals = {}), locals);
+  set(locals: Variables) {
+    Object.assign(this.variables, locals);
+    return this;
   }
 
   reset() {
-    this.locals = {};
+    this.variables = {};
+    return this;
   }
 
-  fork(newContext?: HTMLElement) {
+  fork(newContext?: object) {
     return new ExecutionContext(newContext || this.thisValue, this);
   }
 
-  run(expression: string, localValues?: ExecutionLocals) {
-    const fn = this.compile(expression, localValues);
+  execute(expression: string, newValues?: Variables) {
+    const fn = this.compile(expression, newValues);
     return fn();
   }
 
-  compile(expression: string, localValues?: ExecutionLocals) {
-    const locals = this.getLocals(localValues);
-    const localsByName = Object.keys(locals);
-    const cacheKey = expression + localsByName;
+  private compile(expression: string, variables?: Variables) {
+    const mergedVariables = this.mergeVariables(variables);
+    const variableNames = Object.keys(mergedVariables);
+    const values = variableNames.map((key) => mergedVariables[key]);
+    const cacheKey = expression + variableNames.join('');
 
     if (!expressionCache.has(cacheKey)) {
-      expressionCache.set(cacheKey, Function(...localsByName, `return ${expression}`));
+      expressionCache.set(cacheKey, Function(...variableNames, `return ${expression}`));
     }
 
-    const localsAsArray = localsByName.map(key => locals[key]);
-    return expressionCache.get(cacheKey).bind(this.thisValue, ...localsAsArray);
+    return expressionCache.get(cacheKey).bind(this.thisValue, ...values);
   }
 
-  private getLocals(additionalValues?: ExecutionLocals) {
-    const locals = {};
+  private mergeVariables(additionalVariables?: Variables) {
+    const variables = {};
 
     if (this.parent) {
-      Object.assign(locals, this.parent.getLocals());
+      Object.assign(variables, this.parent.mergeVariables());
     }
 
-    if (this.locals) {
-      Object.assign(locals, this.locals);
+    if (this.variables) {
+      Object.assign(variables, this.variables);
     }
 
-    if (additionalValues) {
-      Object.assign(locals, additionalValues);
+    if (additionalVariables) {
+      Object.assign(variables, additionalVariables);
     }
 
-    return locals;
+    return variables;
   }
 }
 
@@ -68,8 +67,12 @@ export class SealedExecutionContext extends ExecutionContext {
     super(null, parent);
   }
 
-  addLocals(_: ExecutionLocals) {}
-  reset() {}
+  set(_: Variables) {
+    return this;
+  }
+  reset() {
+    return this;
+  }
 }
 
 export const NullContext = new SealedExecutionContext();
