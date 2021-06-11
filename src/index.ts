@@ -1,36 +1,28 @@
 type Fn = Function;
+const expressionCache = new Map<string, Fn>();
 
 export type Variables = Record<string, any>;
 
-const expressionCache = new Map<string, Fn>();
+export interface Context {
+  set(locals: Variables): Context;
+  reset(): Context;
+  execute<T>(expression: string, newValues?: Variables): T;
+}
 
-export class ExecutionContext {
-  private variables: Variables;
+export abstract class AbstractContext implements Context {
+  protected thisValue: object;
+  protected variables: Variables = {};
 
-  constructor(private thisValue: object = null, private parent?: ExecutionContext) {
+  abstract set(locals: Variables): Context;
+  abstract reset(): Context;
+  abstract execute<T>(expression: string, newValues?: Variables): T;
+
+  constructor(thisValue: object = null) {
+    this.thisValue = thisValue;
     this.reset();
   }
 
-  set(locals: Variables) {
-    Object.assign(this.variables, locals);
-    return this;
-  }
-
-  reset() {
-    this.variables = {};
-    return this;
-  }
-
-  fork(newContext?: object) {
-    return new ExecutionContext(newContext || this.thisValue, this);
-  }
-
-  execute(expression: string, newValues?: Variables) {
-    const fn = this.compile(expression, newValues);
-    return fn();
-  }
-
-  private compile(expression: string, variables?: Variables) {
+  protected compile(expression: string, variables?: Variables) {
     const mergedVariables = this.mergeVariables(variables);
     const variableNames = Object.keys(mergedVariables);
     const values = variableNames.map((key) => mergedVariables[key]);
@@ -43,36 +35,49 @@ export class ExecutionContext {
     return expressionCache.get(cacheKey).bind(this.thisValue, ...values);
   }
 
-  private mergeVariables(additionalVariables?: Variables) {
-    const variables = {};
-
-    if (this.parent) {
-      Object.assign(variables, this.parent.mergeVariables());
-    }
-
-    if (this.variables) {
-      Object.assign(variables, this.variables);
-    }
-
-    if (additionalVariables) {
-      Object.assign(variables, additionalVariables);
-    }
-
-    return variables;
+  protected mergeVariables(additionalVariables?: Variables) {
+    return Object.assign({}, this.variables, additionalVariables);
   }
 }
 
-export class SealedExecutionContext extends ExecutionContext {
-  constructor(parent?: ExecutionContext) {
-    super(null, parent);
+export class ExecutionContext extends AbstractContext implements Context {
+  constructor(thisValue: object = null) {
+    super(thisValue);
   }
 
-  set(_: Variables) {
+  set(locals: Variables) {
+    Object.assign(this.variables, locals);
     return this;
   }
+
   reset() {
+    this.variables = {};
     return this;
+  }
+
+  execute(expression: string, newValues?: Variables) {
+    const fn = this.compile(expression, newValues);
+    return fn();
   }
 }
 
-export const NullContext = new SealedExecutionContext();
+export class TreeExecutionContext extends ExecutionContext {
+  constructor(thisValue: object = null, protected parent?: ExecutionContext) {
+    super(thisValue);
+    this.reset();
+  }
+
+  fork(newContext?: object) {
+    return new TreeExecutionContext(newContext || this.thisValue, this);
+  }
+
+  protected mergeVariables(additionalVariables?: Variables) {
+    return Object.assign(
+      {},
+      (this.parent && (this.parent as TreeExecutionContext).mergeVariables()) || {},
+      super.mergeVariables(additionalVariables),
+    );
+  }
+}
+
+export const NullContext = new ExecutionContext();

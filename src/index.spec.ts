@@ -1,7 +1,7 @@
-import { ExecutionContext, SealedExecutionContext } from '../src/index';
+import { ExecutionContext, TreeExecutionContext } from '../src/index';
 
 describe('ExecutionContext', () => {
-  it('should run an expression with provided variables', () => {
+  it('should run an expression with stored variables', () => {
     const context = new ExecutionContext();
     context.set({ number: 123, string: 'alice' });
 
@@ -10,42 +10,16 @@ describe('ExecutionContext', () => {
     expect(output).toBe('alice123');
   });
 
-  it('should run the same expression multiple times', () => {
-    const context = new ExecutionContext(null);
-    context.set({ number: 123 });
+  it('should run an expression with provided variables', () => {
+    const context = new ExecutionContext();
+    context.set({ number: 123, string: 'alice' });
 
-    context.execute('number + 1');
-    context.execute('number + 1');
-    const output = context.execute('number + 1');
+    const output = context.execute('string + number', { number: 42, string: 'bob' });
 
-    expect(output).toBe(124);
+    expect(output).toBe('bob42');
   });
 
-  it('should run an expression using values from a parent context', () => {
-    const parentContext = new ExecutionContext({ prefix: 'the value is ' });
-    parentContext.set({ number: 123 });
-
-    const output = parentContext.fork().set({ number: 456 }).execute('this.prefix + number');
-
-    expect(output).toBe('the value is 456');
-  });
-
-  it('should merge the variables from current context, parent and additional ones', () => {
-    const parentContext = new ExecutionContext();
-
-    parentContext.set({ number: 123 });
-
-    const secondContext = parentContext.fork();
-    secondContext.set({ string: 'alice' });
-
-    const thirdContext = secondContext.fork();
-
-    const output = thirdContext.execute('number + string + foo', { foo: 'foo' });
-
-    expect(output).toBe('123alicefoo');
-  });
-
-  it('allows to reset local values', () => {
+  it('should reset stored variables', () => {
     const context = new ExecutionContext(null);
 
     context.set({ number: 123 });
@@ -55,19 +29,20 @@ describe('ExecutionContext', () => {
   });
 });
 
-describe('SealedExecutionContext', () => {
-  it('should prevent context modifications', () => {
-    const context = new ExecutionContext(null);
-    context.set({ number: 123 });
+describe('TreeExecutionContext', () => {
+  it('should run an expression using values from parent context', () => {
+    const rootContext = new TreeExecutionContext({ text: 'the answer is ' });
+    const middleContext = rootContext.fork();
+    const finalContext = middleContext.fork();
+    
+    rootContext.set({ number: 1 });
+    middleContext.set({ number: 42 });
 
-    const sealedContext = new SealedExecutionContext(context);
-    sealedContext.reset();
-    sealedContext.set({ local: true });
+    const output = finalContext.execute('this.text + number');
 
-    expect(() => sealedContext.execute('local')).toThrow(new ReferenceError('local is not defined'));
-    expect(sealedContext.execute('number')).toBe(123);
+    expect(output).toBe('the answer is 42');
   });
-});
+})
 
 describe('docs', () => {
   it('should run samples from documentation', () => {
